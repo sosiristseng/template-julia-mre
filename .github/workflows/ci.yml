@@ -12,7 +12,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NPROC: '2' # Number of Julia processes to run the notebooks
   CACHE_NUM: '1'
   PY_VER: '3.12'
   JULIA_CONDAPKG_BACKEND: 'Null'
@@ -50,56 +49,18 @@ jobs:
         path: |
           ~/.julia
           !~/.julia/registries
-        key: ${{ runner.os }}-julia-${{ env.CACHE_NUM }}-${{ hashFiles('src/**','Project.toml', 'Manifest.toml')}}
+        key: ${{ runner.os }}-julia-${{ env.CACHE_NUM }}-${{ hashFiles('Manifest.toml')}}
         restore-keys: |
           ${{ runner.os }}-julia-${{ env.CACHE_NUM }}-
     - name: Install Julia packages
       if: ${{ steps.cache-julia.outputs.cache-hit != 'true' }}
       env:
         PYTHON: ${{ env.pythonLocation }}/python
-      shell: julia --color=yes {0}
+      shell: julia --project=@. --color=yes {0}
       run: |
-        using Pkg, Dates
-        Pkg.add(["PrettyTables", "Literate"])
-        Pkg.activate(".")
+        using Pkg, Date
         Pkg.instantiate()
         Pkg.precompile()
         Pkg.gc(collect_delay=Day(0))
-    - name: Run notebooks
-      run: julia --color=yes -p ${{ env.NPROC }} literate.jl
-    - name: Convert jupyter notebooks to Markdown files
-      run: >
-        find docs -type f -name '*.ipynb' |
-        parallel -j1 jupyter nbconvert --to markdown {}
-    - name: Setup Pages
-      id: pages
-      uses: actions/configure-pages@v4
-    - name: Build website
-      env:
-        SITE_URL: ${{ steps.pages.outputs.base_url }}
-        REPO_URL: ${{ github.server_url	}}/${{ github.repository }}
-        REPO_NAME: ${{ github.repository }}
-      run: mkdocs build
-    - name: Upload pages artifact
-      if: ${{ github.ref == 'refs/heads/main' }}
-      uses: actions/upload-pages-artifact@v3
-      with:
-        path: ./site
-
-  deploy:
-    name: Deploy to GitHub pages
-    needs: CI
-    if: ${{ github.ref == 'refs/heads/main'}}
-    # Grant GITHUB_TOKEN the permissions required to make a Pages deployment
-    permissions:
-      pages: write # to deploy to Pages
-      id-token: write # to verify the deployment originates from an appropriate source
-      actions: read   # to download an artifact uploaded by `actions/upload-pages-artifact@v3`
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    steps:
-    - name: Deploy to GitHub Pages
-      id: deployment
-      uses: actions/deploy-pages@v4
+    - name: Run script
+      run: julia --project=@. --color=yes main.jl
