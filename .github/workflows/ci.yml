@@ -1,0 +1,105 @@
+name: Build notebooks and publish
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NPROC: '2' # Number of Julia processes to run the notebooks
+  CACHE_NUM: '1'
+  PY_VER: '3.12'
+  JULIA_CONDAPKG_BACKEND: 'Null'
+  JULIA_CI: 'true'
+
+jobs:
+  CI:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      id: cp
+      with:
+        python-version: ${{ env.PY_VER }}
+        cache: 'pip'
+    - name: Install python packages
+      run: pip install -r requirements.txt
+    - name: Read Julia version
+      uses: SebRollen/toml-action@v1.2.0
+      id: read_toml
+      with:
+        file: 'Manifest.toml'
+        field: 'julia_version'
+    - name: Setup Julia
+      uses: julia-actions/setup-julia@v1
+      with:
+        version: ${{ steps.read_toml.outputs.value }}
+    - name: Cache Julia packages
+      uses: actions/cache@v4
+      id: cache-julia
+      with:
+        save-always: 'true'
+        path: |
+          ~/.julia
+          !~/.julia/registries
+        key: ${{ runner.os }}-julia-${{ env.CACHE_NUM }}-${{ hashFiles('src/**','Project.toml', 'Manifest.toml')}}
+        restore-keys: |
+          ${{ runner.os }}-julia-${{ env.CACHE_NUM }}-
+    - name: Install Julia packages
+      if: ${{ steps.cache-julia.outputs.cache-hit != 'true' }}
+      env:
+        PYTHON: ${{ env.pythonLocation }}/python
+      shell: julia --color=yes {0}
+      run: |
+        using Pkg, Dates
+        Pkg.add(["PrettyTables", "Literate"])
+        Pkg.activate(".")
+        Pkg.instantiate()
+        Pkg.precompile()
+        Pkg.gc(collect_delay=Day(0))
+    - name: Run notebooks
+      run: julia --color=yes -p ${{ env.NPROC }} literate.jl
+    - name: Convert jupyter notebooks to Markdown files
+      run: >
+        find docs -type f -name '*.ipynb' |
+        parallel -j1 jupyter nbconvert --to markdown {}
+    - name: Setup Pages
+      id: pages
+      uses: actions/configure-pages@v4
+    - name: Build website
+      env:
+        SITE_URL: ${{ steps.pages.outputs.base_url }}
+        REPO_URL: ${{ github.server_url	}}/${{ github.repository }}
+        REPO_NAME: ${{ github.repository }}
+      run: mkdocs build
+    - name: Upload pages artifact
+      if: ${{ github.ref == 'refs/heads/main' }}
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: ./site
+
+  deploy:
+    name: Deploy to GitHub pages
+    needs: CI
+    if: ${{ github.ref == 'refs/heads/main'}}
+    # Grant GITHUB_TOKEN the permissions required to make a Pages deployment
+    permissions:
+      pages: write # to deploy to Pages
+      id-token: write # to verify the deployment originates from an appropriate source
+      actions: read   # to download an artifact uploaded by `actions/upload-pages-artifact@v3`
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
