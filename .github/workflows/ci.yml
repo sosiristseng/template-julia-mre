@@ -58,7 +58,7 @@ jobs:
         PYTHON: ${{ env.pythonLocation }}/python
       shell: julia --project=@. --color=yes {0}
       run: |
-        using Pkg, Date
+        using Pkg, Dates
         Pkg.instantiate()
         Pkg.precompile()
         Pkg.gc(collect_delay=Day(0))
