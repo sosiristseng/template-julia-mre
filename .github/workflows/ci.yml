@@ -55,7 +55,7 @@ jobs:
     - name: Install Julia packages
       if: ${{ steps.cache-julia.outputs.cache-hit != 'true' }}
       env:
-        PYTHON: ${{ env.pythonLocation }}/python
+        PYTHON: ${{ steps.cp.outputs.python-path }}
       shell: julia --project=@. --color=yes {0}
       run: |
         using Pkg, Dates
